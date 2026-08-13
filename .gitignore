@@ -1,0 +1,38 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+.env
+.venv/
+
+# Środowisko
+.venv/
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Dane i modele
+data/raw/
+data/processed/
+*.onnx
+.cache/
+
+# Edytory
+.idea/
+*.swp
