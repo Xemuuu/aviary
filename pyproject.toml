@@ -55,6 +55,7 @@ ignore = ["ANN401"]
 python_version = "3.12"
 strict = true
 warn_unreachable = true
+plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
 module = ["qdrant_client.*", "fastembed.*", "langgraph.*"]
