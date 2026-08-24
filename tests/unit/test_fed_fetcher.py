@@ -9,6 +9,10 @@ import httpx
 import pytest
 
 from aviary.ingestion.fed import (
+    _STATEMENT_HREF,
+    CALENDAR_URL,
+    EARLIEST_ARCHIVED_YEAR,
+    _listing_urls,
     _parse_release_date,
     discover_statement_urls,
     fetch_statements,
@@ -35,7 +39,7 @@ def _transport(*, fail_on: set[str] | None = None) -> httpx.MockTransport:
         path = request.url.path
         if path in failing:
             return httpx.Response(500)
-        if "fomccalendars" in path or "fomc_historical" in path:
+        if "fomccalendars" in path or "fomchistorical" in path:
             return httpx.Response(200, text=LISTING_HTML)
         return httpx.Response(200, text=STATEMENT_HTML)
 
@@ -49,6 +53,38 @@ def _api_key(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_parse_release_date() -> None:
     assert _parse_release_date("20240131") == date(2024, 1, 31)
+
+
+def test_statement_href_matches_current_format() -> None:
+    current = '<a href="/newsevents/pressreleases/monetary20240131a.htm">January 31, 2024</a>'
+    match = _STATEMENT_HREF.search(current)
+
+    assert match is not None
+    assert match.group(1) == "20240131"
+
+
+def test_statement_href_matches_legacy_format() -> None:
+    legacy = '<a href="/newsevents/press/monetary/20100127a.htm">January 27, 2010</a>'
+    match = _STATEMENT_HREF.search(legacy)
+
+    assert match is not None
+    assert match.group(1) == "20100127"
+
+
+def test_listing_urls_cover_archive_years() -> None:
+    urls = _listing_urls(date(2020, 1, 1))
+
+    assert urls[0] == CALENDAR_URL
+    assert any("fomchistorical2020.htm" in u for u in urls)
+    assert any(f"fomchistorical{date.today().year}.htm" in u for u in urls)
+    assert not any("fomchistorical2019.htm" in u for u in urls)
+
+
+def test_listing_urls_clamp_to_earliest_archived_year() -> None:
+    urls = _listing_urls(date(1998, 1, 1))
+
+    assert any(f"fomchistorical{EARLIEST_ARCHIVED_YEAR}.htm" in u for u in urls)
+    assert not any(f"fomchistorical{EARLIEST_ARCHIVED_YEAR - 1}.htm" in u for u in urls)
 
 
 @pytest.mark.asyncio

@@ -17,10 +17,13 @@ log = get_logger(__name__)
 
 BASE_URL: Final = "https://www.federalreserve.gov"
 CALENDAR_URL: Final = f"{BASE_URL}/monetarypolicy/fomccalendars.htm"
-HISTORICAL_URL: Final = f"{BASE_URL}/monetarypolicy/fomc_historical_year.htm"
+HISTORICAL_URL_TEMPLATE: Final = f"{BASE_URL}/monetarypolicy/fomchistorical{{year}}.htm"
+
+EARLIEST_ARCHIVED_YEAR: Final = 2006
+"""Archive pages below this year do not link statements in a recoverable format."""
 
 _STATEMENT_HREF: Final = re.compile(
-    r"/newsevents/pressreleases/monetary(\d{8})a\.htm",
+    r"/newsevents/(?:press/monetary/|pressreleases/monetary)(\d{8})a\.htm",
     re.IGNORECASE,
 )
 
@@ -44,6 +47,15 @@ def _parse_release_date(raw: str) -> date:
     return date(int(raw[:4]), int(raw[4:6]), int(raw[6:8]))
 
 
+def _listing_urls(since: date | None) -> list[str]:
+    """Return the listing pages worth scanning for a given cutoff."""
+    first_year = max(since.year if since else EARLIEST_ARCHIVED_YEAR, EARLIEST_ARCHIVED_YEAR)
+    current_year = date.today().year
+
+    years = range(first_year, current_year + 1)
+    return [CALENDAR_URL, *(HISTORICAL_URL_TEMPLATE.format(year=y) for y in years)]
+
+
 async def discover_statement_urls(
     client: httpx.AsyncClient,
     *,
@@ -51,26 +63,37 @@ async def discover_statement_urls(
 ) -> dict[date, str]:
     """Return statement URLs keyed by release date.
 
-    Scans both the current calendar page and the historical archive, since
-    the Fed splits recent and older statements across two listings.
+    Scans the current calendar page plus one archive page per year, since the
+    Fed publishes historical materials year by year rather than in a single
+    listing.
     """
     found: dict[date, str] = {}
+    unreachable: list[str] = []
 
-    for listing in (CALENDAR_URL, HISTORICAL_URL):
+    for listing in _listing_urls(since):
         try:
             response = await client.get(listing)
             response.raise_for_status()
         except httpx.HTTPError as exc:
+            unreachable.append(listing)
             log.warning("listing_fetch_failed", url=listing, error=str(exc))
             continue
 
+        matches = 0
         for match in _STATEMENT_HREF.finditer(response.text):
             released_on = _parse_release_date(match.group(1))
             if since is not None and released_on < since:
                 continue
             found[released_on] = f"{BASE_URL}{match.group(0)}"
+            matches += 1
 
-    log.info("statements_discovered", count=len(found))
+        if matches == 0:
+            log.warning("listing_yielded_nothing", url=listing)
+
+    if unreachable:
+        log.error("listings_unreachable", count=len(unreachable), urls=unreachable[:5])
+
+    log.info("statements_discovered", count=len(found), listings=len(_listing_urls(since)))
     return found
 
 

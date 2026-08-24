@@ -36,3 +36,5 @@ data/processed/
 # Edytory
 .idea/
 *.swp
+
+scratch_*.py
